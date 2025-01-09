@@ -35,15 +35,15 @@ def handle_pose_estimation():
         logger.info(f"Received joint positions with shape: {joint_positions.shape}")
         
         # Validate input shape
-        if joint_positions.shape != (25, 3):
+        if joint_positions.shape != (24, 3):
             logger.error(f"Invalid joint positions shape: {joint_positions.shape}")
-            return jsonify({'error': 'Invalid joint positions format. Expected shape: (25, 3)'}), 400
+            return jsonify({'error': 'Invalid joint positions format. Expected shape: (24, 3)'}), 400
             
         # Visualize input joints
         input_viz_path = pose_estimator.visualize_joints(joint_positions, title="input_joints.png")
         
         # Estimate pose
-        optimized_pose = pose_estimator.estimate_pose(joint_positions)
+        joint_pos ,optimized_pose = pose_estimator.estimate_pose(joint_positions)
         logger.info("Pose estimation completed successfully")
         # Visualize and save the optimized pose
         output_viz_path = pose_estimator.visualize_pose(optimized_pose, title="optimized_pose.png")
@@ -51,7 +51,7 @@ def handle_pose_estimation():
         glb_path = pose_estimator.export_pose_glb(optimized_pose, "static/optimized_pose.glb")
         
         result = {
-            'pose_parameters': optimized_pose.tolist(),
+            'pose_params': optimized_pose.tolist(),
             'glb_url': glb_path,  # URL path to the GLB file
             'status': 'success'
         }
