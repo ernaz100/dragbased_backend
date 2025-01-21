@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import os
 from tqdm import tqdm
+import numpy as np
+from pose_estimator import PoseEstimator
 
 class PoseNetwork(nn.Module):
     def __init__(self, input_joints=24, joint_dims=3, hidden_size=1024, pose_params=72):
@@ -58,7 +60,7 @@ class PoseNetwork(nn.Module):
         return pose_params
 
 
-def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learning_rate=1e-4, checkpoint_dir='checkpoints'):
+def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learning_rate=1e-4, checkpoint_dir='checkpoints', checkpoint_name='best_model.pth'):
     """
     Training loop for the pose network with validation and model checkpointing.
     
@@ -69,12 +71,19 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
         num_epochs (int): Number of training epochs
         learning_rate (float): Learning rate for optimization
         checkpoint_dir (str): Directory to save model checkpoints
+        checkpoint_name (str): Name of the checkpoint file
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
     model = model.to(device)
     print(f"Using device: {device}")
-    # Create checkpoint directory if it doesn't exist
+    
+    # Initialize PoseEstimator for visualization
+    pose_estimator = PoseEstimator()
+    
+    # Create checkpoint and visualization directories
     os.makedirs(checkpoint_dir, exist_ok=True)
+    vis_dir = os.path.join(checkpoint_dir, 'visualizations')
+    os.makedirs(vis_dir, exist_ok=True)
     
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -104,6 +113,23 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
             
             total_train_loss += loss.item()
             train_pbar.set_postfix({'train_loss': f'{loss.item():.4f}'})
+            
+            # Visualize random pose from batch at the end of epoch
+            if batch_idx == len(train_dataloader) - 1:
+                random_idx = np.random.randint(joints.size(0))
+                pred_pose = predicted_poses[random_idx].detach().cpu().numpy()
+                true_pose = poses[random_idx].cpu().numpy()
+                
+                # Visualize predicted pose
+                pose_estimator.visualize_pose(
+                    pred_pose,
+                    title=os.path.join(vis_dir, f'epoch_{epoch+1}_train_pred.png')
+                )
+                # Visualize ground truth pose
+                pose_estimator.visualize_pose(
+                    true_pose,
+                    title=os.path.join(vis_dir, f'epoch_{epoch+1}_train_true.png')
+                )
         
         avg_train_loss = total_train_loss / len(train_dataloader)
         
@@ -113,7 +139,7 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
         
         val_pbar = tqdm(val_dataloader, desc='Validation')
         with torch.no_grad():
-            for joints, poses in val_pbar:
+            for batch_idx, (joints, poses) in enumerate(val_pbar):
                 joints = joints.to(device)
                 poses = poses.to(device)
                 
@@ -121,6 +147,23 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
                 val_loss = criterion(predicted_poses, poses)
                 total_val_loss += val_loss.item()
                 val_pbar.set_postfix({'val_loss': f'{val_loss.item():.4f}'})
+                
+                # Visualize random pose from batch at the end of validation
+                if batch_idx == len(val_dataloader) - 1:
+                    random_idx = np.random.randint(joints.size(0))
+                    pred_pose = predicted_poses[random_idx].detach().cpu().numpy()
+                    true_pose = poses[random_idx].cpu().numpy()
+                    
+                    # Visualize predicted pose
+                    pose_estimator.visualize_pose(
+                        pred_pose,
+                        title=os.path.join(vis_dir, f'epoch_{epoch+1}_val_pred.png')
+                    )
+                    # Visualize ground truth pose
+                    pose_estimator.visualize_pose(
+                        true_pose,
+                        title=os.path.join(vis_dir, f'epoch_{epoch+1}_val_true.png')
+                    )
         
         avg_val_loss = total_val_loss / len(val_dataloader)
         
@@ -134,7 +177,7 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
             }
-            torch.save(checkpoint, os.path.join(checkpoint_dir, 'best_model.pth'))
+            torch.save(checkpoint, os.path.join(checkpoint_dir, checkpoint_name))
         
         print(f'Epoch [{epoch+1}/{num_epochs}]')
         print(f'Training Loss: {avg_train_loss:.4f}')
@@ -173,8 +216,11 @@ def evaluate_model(model, test_dataloader, device):
 if __name__ == "__main__":
     # Example usage
     from dataloader import AMASSDataset, DataLoader
-    BATCH_SIZE = 32
-    
+    BATCH_SIZE = 256
+    EPOCHS = 10
+    LEARNING_RATE = 1e-4
+    CHECKPOINT_NAME = 'model_v1.pth' 
+
     # Initialize datasets and dataloaders
     data_dirs = [
         "/Users/ericnazarenus/Desktop/dragbased/data/03099",
@@ -209,11 +255,11 @@ if __name__ == "__main__":
     
     # Initialize and train model
     model = PoseNetwork()
-    train_model(model, train_dataloader, val_dataloader, num_epochs=10)
+    train_model(model, train_dataloader, val_dataloader, num_epochs=EPOCHS, learning_rate=LEARNING_RATE, checkpoint_name=CHECKPOINT_NAME)
 
     # Load best model for testing
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
-    checkpoint = torch.load('checkpoints/best_model.pth', map_location=device, weights_only=True)
+    checkpoint = torch.load(f'checkpoints/{CHECKPOINT_NAME}', map_location=device, weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     model.eval()

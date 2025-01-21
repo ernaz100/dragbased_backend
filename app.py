@@ -47,7 +47,7 @@ joint_mapping = {
 # Initialize pose network
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
 pose_network = PoseNetwork()
-checkpoint = torch.load('checkpoints/best_model.pth', map_location=device, weights_only=True)
+checkpoint = torch.load('checkpoints/best_model_epoch10.pth', map_location=device, weights_only=True)
 pose_network.load_state_dict(checkpoint['model_state_dict'])
 pose_network.to(device)
 pose_network.eval()
@@ -79,16 +79,17 @@ def handle_pose_estimation():
 
         # Remap joints to SMPL order
         remapped_joints = remap_joints(joint_positions)
-        
+        print(remapped_joints)
         # Prepare input for pose network
-        joints_tensor = torch.tensor(remapped_joints, dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # Add batch and sequence dims
+        joints_tensor = torch.tensor(remapped_joints, dtype=torch.float32).unsqueeze(0)  # Add batch dim
         joints_tensor = joints_tensor.to(device)
         
         # Get pose parameters from network
         with torch.no_grad():
             pose_params = pose_network(joints_tensor)
-            pose_params = pose_params.cpu().numpy().squeeze()  # Remove batch and sequence dims
+            pose_params = pose_params.cpu().numpy().squeeze()  # Remove batch dim
         frontend_pose_params = remap_pose_params_back(pose_params)
+        print(frontend_pose_params)
 
         glb_path = pose_estimator.export_pose_glb(frontend_pose_params, "static/optimized_pose_net.glb")
         output_viz_path = pose_estimator.visualize_pose(pose_params=frontend_pose_params, title="optimized_pose_net.png" ,selected_joint=selected_joint)
@@ -139,11 +140,10 @@ def remap_pose_params_back(smpl_pose_params):
     # Create output array
     frontend_pose_params = np.zeros(72)
     
-    # Remap the joint rotations (remaining 69 values, 3 per joint)
     for frontend_idx, smpl_idx in joint_mapping.items():
         src_idx = smpl_idx * 3 
         dst_idx = frontend_idx * 3 
-        frontend_pose_params[dst_idx:dst_idx] = smpl_pose_params[src_idx:src_idx]
+        frontend_pose_params[dst_idx:dst_idx+3] = smpl_pose_params[src_idx:src_idx+3]
     
     return frontend_pose_params
 
