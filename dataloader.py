@@ -22,7 +22,7 @@ class AMASSDataset(Dataset):
         self.all_poses = []
         self.all_betas = []
         
-        for file_idx, file_path in enumerate(os.listdir(data_dir)):
+        for file_path in os.listdir(data_dir):
             if file_path.endswith('.npz'):
                 data = np.load(os.path.join(data_dir, file_path))
                 poses = data["poses"]  # (N_frames, 156)
@@ -77,6 +77,25 @@ class AMASSDataset(Dataset):
         poses = torch.tensor(pose, dtype=torch.float32)
 
         return joints, poses
+
+    def extend_dataset(self, data_dir):
+        """
+        Extend the dataset with additional data from another directory.
+        
+        Args:
+            data_dir (str): Path to the directory containing additional AMASS `.npz` files.
+        """
+        for file_path in os.listdir(data_dir):
+            if file_path.endswith('.npz'):
+                data = np.load(os.path.join(data_dir, file_path))
+                poses = data["poses"]
+                betas = data["betas"][:10]
+                
+                self.all_poses.append(poses)
+                self.all_betas.append(betas)
+        
+        # Update total frames count
+        self.total_frames = sum(len(poses) for poses in self.all_poses)
 
 data_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03099"
 

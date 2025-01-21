@@ -176,15 +176,36 @@ if __name__ == "__main__":
     BATCH_SIZE = 32
     
     # Initialize datasets and dataloaders
-    train_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03099"
-    validation_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03100"
-    test_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03101"
-
-    train_dataset = AMASSDataset(train_dir)
-    val_dataset = AMASSDataset(validation_dir)
+    data_dirs = [
+        "/Users/ericnazarenus/Desktop/dragbased/data/03099",
+        "/Users/ericnazarenus/Desktop/dragbased/data/03100",
+        "/Users/ericnazarenus/Desktop/dragbased/data/03101"
+    ]
     
+    # Combine all data directories for a larger dataset
+    train_dataset = AMASSDataset(data_dirs[0])  # Start with first directory
+    for dir in data_dirs[1:]:
+        train_dataset.extend_dataset(dir) 
+    
+    # Calculate split sizes (70% train, 15% val, 15% test)
+    total_size = len(train_dataset)
+    train_size = int(0.7 * total_size)
+    val_size = int(0.15 * total_size)
+    test_size = total_size - train_size - val_size
+    
+    # Split the dataset
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
+        train_dataset, 
+        [train_size, val_size, test_size],
+        generator=torch.Generator().manual_seed(42)  # For reproducibility
+    )
+    
+    print(f"Dataset sizes - Train: {len(train_dataset)}, Val: {len(val_dataset)}, Test: {len(test_dataset)}")
+    
+    # Create dataloaders
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
     # Initialize and train model
     model = PoseNetwork()
@@ -197,7 +218,5 @@ if __name__ == "__main__":
     model.to(device)
     model.eval()
     # Test the best model
-    test_dataset = AMASSDataset(test_dir)
-    test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     test_loss = evaluate_model(model, test_dataloader, device)
     
