@@ -72,7 +72,7 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
     model = model.to(device)
-    
+    print(f"Using device: {device}")
     # Create checkpoint directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
     
