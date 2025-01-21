@@ -7,6 +7,7 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='TRUE'
 import torch
 from pose_network import PoseNetwork
+import matplotlib.pyplot as plt
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +48,7 @@ joint_mapping = {
 # Initialize pose network
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
 pose_network = PoseNetwork()
-checkpoint = torch.load('checkpoints/best_model_epoch10.pth', map_location=device, weights_only=True)
+checkpoint = torch.load('checkpoints/model_training_batch_256_epochs25.pth', map_location=device, weights_only=True)
 pose_network.load_state_dict(checkpoint['model_state_dict'])
 pose_network.to(device)
 pose_network.eval()
@@ -77,23 +78,62 @@ def handle_pose_estimation():
             logger.error(f"Invalid joint positions shape: {joint_positions.shape}")
             return jsonify({'error': 'Invalid joint positions format. Expected shape: (24, 3)'}), 400
 
+        # Debug original input
+        visualize_debug_joints(joint_positions, "Original Input", "static/debug_1_original.png")
+        logger.info(f"Original joints stats - min: {joint_positions.min()}, max: {joint_positions.max()}")
+        
         # Remap joints to SMPL order
         remapped_joints = remap_joints(joint_positions)
-        print(remapped_joints)
+        # Debug after remapping
+        visualize_debug_joints(remapped_joints, "After Remapping", "static/debug_2_remapped.png")
+        logger.info(f"Remapped joints stats - min: {remapped_joints.min()}, max: {remapped_joints.max()}")
+        
+        # Transform joints to match SMPL coordinate system
+        transformed_joints = transform_input_joints(remapped_joints)
+        # Debug after transformation
+        visualize_debug_joints(transformed_joints, "After Transform", "static/debug_3_transformed.png")
+        logger.info(f"Transformed joints stats - min: {transformed_joints.min()}, max: {transformed_joints.max()}")
+        
         # Prepare input for pose network
-        joints_tensor = torch.tensor(remapped_joints, dtype=torch.float32).unsqueeze(0)  # Add batch dim
+        joints_tensor = torch.tensor(transformed_joints, dtype=torch.float32).unsqueeze(0)  # Add batch dim
         joints_tensor = joints_tensor.to(device)
         
         # Get pose parameters from network
         with torch.no_grad():
             pose_params = pose_network(joints_tensor)
             pose_params = pose_params.cpu().numpy().squeeze()  # Remove batch dim
+
+        # Get predicted joints from the pose parameters
+        predicted_joints = pose_estimator.forward_kinematics(pose_params)
+        # Remap predicted joints to frontend order
+        predicted_joints = pose_estimator.remap_joints_to_frontend(predicted_joints)
+        
+        # Debug after prediction
+        visualize_debug_joints(predicted_joints, "Predicted Joints", "static/debug_4_predicted.png")
+        logger.info(f"Predicted joints stats - min: {predicted_joints.min()}, max: {predicted_joints.max()}")
+        
+        # Visualize both input and predicted joints in the same plot
+        comparison_viz_path = visualize_joint_comparison(
+            input_joints=joint_positions,
+            predicted_joints=predicted_joints,
+            selected_joint=selected_joint,
+            title="static/joint_comparison.png"
+        )
+        
         frontend_pose_params = remap_pose_params_back(pose_params)
         glb_path = pose_estimator.export_pose_glb(pose_params, "static/optimized_pose_nets.glb")
-        output_viz_path = pose_estimator.visualize_pose(pose_params=pose_params, title="optimized_pose_nets.png" ,selected_joint=selected_joint)
+        output_viz_path = pose_estimator.visualize_pose(pose_params=pose_params, title="static/optimized_pose_nets.png", selected_joint=selected_joint)
 
         result = {
             'pose_params': frontend_pose_params.tolist(),
+            'predicted_joints': predicted_joints.tolist(),
+            'comparison_viz': '/static/joint_comparison.png',
+            'debug_viz': {
+                'original': '/static/debug_1_original.png',
+                'remapped': '/static/debug_2_remapped.png',
+                'transformed': '/static/debug_3_transformed.png',
+                'predicted': '/static/debug_4_predicted.png'
+            },
             'status': 'success'
         }
         
@@ -103,6 +143,57 @@ def handle_pose_estimation():
         logger.error(f"Error during pose estimation: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+def visualize_joint_comparison(input_joints, predicted_joints, selected_joint=None, title="joint_comparison.png"):
+    """Visualize input and predicted joint positions in the same plot"""
+    fig = plt.figure(figsize=(15, 5))
+
+    # Create color arrays
+    input_colors = ['blue'] * len(input_joints)
+    pred_colors = ['red'] * len(predicted_joints)
+    if selected_joint is not None:
+        input_colors[selected_joint] = 'lime'
+        pred_colors[selected_joint] = 'yellow'
+    
+    # Front view 
+    ax1 = fig.add_subplot(131, projection='3d')
+    for i, (joint, color) in enumerate(zip(input_joints, input_colors)):
+        ax1.scatter(joint[0], joint[1], joint[2], c=color, marker='o', label='Input' if i == 0 else "")
+    for i, (joint, color) in enumerate(zip(predicted_joints, pred_colors)):
+        ax1.scatter(joint[0], joint[1], joint[2], c=color, marker='^', label='Predicted' if i == 0 else "")
+    ax1.view_init(elev=90, azim=-90)
+    ax1.set_title('Front View')
+    
+    # Side view
+    ax2 = fig.add_subplot(132, projection='3d')
+    for i, (joint, color) in enumerate(zip(input_joints, input_colors)):
+        ax2.scatter(joint[0], joint[2], joint[1], c=color, marker='o')
+    for i, (joint, color) in enumerate(zip(predicted_joints, pred_colors)):
+        ax2.scatter(joint[0], joint[2], joint[1], c=color, marker='^')
+    ax2.view_init(elev=0, azim=0)
+    ax2.set_title('Side View')
+    
+    # Top view
+    ax3 = fig.add_subplot(133, projection='3d')
+    for i, (joint, color) in enumerate(zip(input_joints, input_colors)):
+        ax3.scatter(joint[0], joint[1], joint[2], c=color, marker='o')
+    for i, (joint, color) in enumerate(zip(predicted_joints, pred_colors)):
+        ax3.scatter(joint[0], joint[1], joint[2], c=color, marker='^')
+    ax3.view_init(elev=0, azim=-90)
+    ax3.set_title('Top View')
+    
+    # Set consistent axes limits and labels
+    for ax in [ax1, ax2, ax3]:
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_box_aspect([1,1,1])
+        ax.legend()
+    
+    plt.tight_layout()
+    plt.savefig(title)
+    plt.close()
+    
+    return title
 
 def remap_joints(input_joints):
         """
@@ -146,24 +237,42 @@ def remap_pose_params_back(smpl_pose_params):
     
     return frontend_pose_params
 
+def transform_input_joints(joints):
+    transformed_joints = joints.copy()
+    transformed_joints[:, 1], transformed_joints[:, 2] = - joints[:, 2], joints[:, 1]
+    return transformed_joints
+
+def visualize_debug_joints(joints, title, save_path):
+    """Debug visualization function for joint positions"""
+    fig = plt.figure(figsize=(15, 5))
+    
+    # Front view
+    ax1 = fig.add_subplot(131, projection='3d')
+    ax1.scatter(joints[:, 0], joints[:, 1], joints[:, 2], c='b', marker='o')
+    ax1.view_init(elev=90, azim=-90)
+    ax1.set_title(f'Front View - {title}')
+    
+    # Side view
+    ax2 = fig.add_subplot(132, projection='3d')
+    ax2.scatter(joints[:, 0], joints[:, 2], joints[:, 1], c='b', marker='o')
+    ax2.view_init(elev=0, azim=0)
+    ax2.set_title(f'Side View - {title}')
+    
+    # Top view
+    ax3 = fig.add_subplot(133, projection='3d')
+    ax3.scatter(joints[:, 0], joints[:, 1], joints[:, 2], c='b', marker='o')
+    ax3.view_init(elev=0, azim=-90)
+    ax3.set_title(f'Top View - {title}')
+    
+    for ax in [ax1, ax2, ax3]:
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_box_aspect([1,1,1])
+        
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True) 
-
-            # # Visualize input joints with selected joint highlighted
-        # input_viz_path = pose_estimator.visualize_joints(joint_positions, selected_joint=selected_joint, title="input_joints.png")
-        
-        # # Estimate pose with selected joint constraint
-        # joint_pos, optimized_pose = pose_estimator.estimate_pose(joint_positions, selected_joint=selected_joint)
-        # logger.info("Pose estimation completed successfully")
-        # # Visualize and save the optimized pose
-        # output_viz_path = pose_estimator.visualize_pose(pose_params=optimized_pose, title="optimized_pose.png" ,selected_joint=selected_joint)
-        # # Export the pose as GLB
-        # glb_path = pose_estimator.export_pose_glb(optimized_pose, "static/optimized_pose.glb")
-        
-        # result = {
-        #     'pose_params': optimized_pose.tolist(),
-        #     'joint_pos': joint_pos.tolist(),
-        #     'glb_url': glb_path,  # URL path to the GLB file
-        #     'status': 'success'
-        # }
