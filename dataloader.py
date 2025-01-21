@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from smplx import SMPL
-from pose_estimator import PoseEstimator
 
 class AMASSDataset(Dataset):
     def __init__(self, data_dir, normalize_joints=True, model_path="../models/smpl"):
@@ -97,14 +96,13 @@ class AMASSDataset(Dataset):
         # Update total frames count
         self.total_frames = sum(len(poses) for poses in self.all_poses)
 
-data_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03099"
-
-# Initialize the dataset and dataloader
-dataset = AMASSDataset(data_dir)
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)  # Adjust batch_size as needed
-pose_estimator = PoseEstimator()
 
 if __name__ == "__main__":
+    data_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03099"
+
+    # Initialize the dataset and dataloader
+    dataset = AMASSDataset(data_dir)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)  # Adjust batch_size as needed
     file_path = "/Users/ericnazarenus/Desktop/dragbased/data/03101/ROM2_poses.npz"
     data = np.load(file_path)
 
@@ -120,13 +118,5 @@ if __name__ == "__main__":
         joints_np = joints[0].numpy()  # Get first frame of first batch
         poses_np = poses[0].numpy()    # Get first frame of first batch
         print(joints_np)
-        # Visualize joints
-        pose_estimator.visualize_joints(joints_np, title="amass_joints.png")
-        
-        # Visualize SMPL mesh with poses
-        pose_estimator.visualize_pose(poses_np, title="amass_pose.png")
-        
-        # Optionally, export as GLB
-        pose_estimator.export_pose_glb(poses_np, "amass_pose.glb")
         
         break  # Only process first batch
