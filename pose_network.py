@@ -4,6 +4,7 @@ import os
 from tqdm import tqdm
 import numpy as np
 from pose_estimator import PoseEstimator
+import matplotlib.pyplot as plt
 
 class PoseNetwork(nn.Module):
     def __init__(self, input_joints=24, joint_dims=3, hidden_size=1024, pose_params=72):
@@ -90,6 +91,10 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
     
     best_val_loss = float('inf')
     
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+    
     for epoch in range(num_epochs):
         # Training phase
         model.train()
@@ -167,6 +172,10 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
         
         avg_val_loss = total_val_loss / len(val_dataloader)
         
+        # Store losses
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
+        
         # Save checkpoint if validation loss improved
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
@@ -184,6 +193,27 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
         print(f'Validation Loss: {avg_val_loss:.4f}')
         print('Best Validation Loss: {:.4f}'.format(best_val_loss))
         print('-' * 50)
+    
+    # Plot losses
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Losses')
+    plt.legend()
+    plt.grid(True)
+    
+    # Save plot
+    plot_path = os.path.join(checkpoint_dir, 'loss_plot.png')
+    plt.savefig(plot_path)
+    plt.close()
+    
+    # Save losses to numpy file for later analysis
+    losses_path = os.path.join(checkpoint_dir, 'losses.npz')
+    np.savez(losses_path, train_losses=train_losses, val_losses=val_losses)
+    
+    return train_losses, val_losses
 
 def evaluate_model(model, test_dataloader, device):
     """
@@ -255,7 +285,9 @@ if __name__ == "__main__":
     
     # Initialize and train model
     model = PoseNetwork()
-    train_model(model, train_dataloader, val_dataloader, num_epochs=EPOCHS, learning_rate=LEARNING_RATE, checkpoint_name=CHECKPOINT_NAME)
+    train_losses, val_losses = train_model(model, train_dataloader, val_dataloader, 
+                                         num_epochs=EPOCHS, learning_rate=LEARNING_RATE, 
+                                         checkpoint_name=CHECKPOINT_NAME)
 
     # Load best model for testing
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')

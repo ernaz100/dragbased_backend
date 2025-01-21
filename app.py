@@ -89,10 +89,9 @@ def handle_pose_estimation():
             pose_params = pose_network(joints_tensor)
             pose_params = pose_params.cpu().numpy().squeeze()  # Remove batch dim
         frontend_pose_params = remap_pose_params_back(pose_params)
-        print(frontend_pose_params)
+        glb_path = pose_estimator.export_pose_glb(pose_params, "static/optimized_pose_nets.glb")
+        output_viz_path = pose_estimator.visualize_pose(pose_params=pose_params, title="optimized_pose_nets.png" ,selected_joint=selected_joint)
 
-        glb_path = pose_estimator.export_pose_glb(frontend_pose_params, "static/optimized_pose_net.glb")
-        output_viz_path = pose_estimator.visualize_pose(pose_params=frontend_pose_params, title="optimized_pose_net.png" ,selected_joint=selected_joint)
         result = {
             'pose_params': frontend_pose_params.tolist(),
             'status': 'success'
