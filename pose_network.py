@@ -47,22 +47,13 @@ class PoseNetwork(nn.Module):
         Forward pass of the network.
         
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, sequence_length, n_joints, 3)
+            x (torch.Tensor): Input tensor of shape (batch_size, n_joints, 3)
             
         Returns:
-            torch.Tensor: Predicted SMPL pose parameters of shape (batch_size, sequence_length, 72)
+            torch.Tensor: Predicted SMPL pose parameters of shape (batch_size, 72)
         """
-        batch_size, seq_length = x.shape[0], x.shape[1]
-        
-        # Reshape to process each frame independently
-        x = x.view(-1, x.shape[2], x.shape[3]) # (batch_size * sequence_length, n_joints, 3)
-        
         # Forward pass through network
         pose_params = self.network(x)
-        
-        # Reshape back to include sequence dimension
-        pose_params = pose_params.view(batch_size, seq_length, -1)
-        
         return pose_params
 
 
@@ -175,22 +166,22 @@ def evaluate_model(model, test_dataloader, device):
 if __name__ == "__main__":
     # Example usage
     from dataloader import AMASSDataset, DataLoader
-    SEQUENCE_LENGTH = 100
     BATCH_SIZE = 32
+    
     # Initialize datasets and dataloaders
     train_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03099"
     validation_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03100"
     test_dir = "/Users/ericnazarenus/Desktop/dragbased/data/03101"
 
-    train_dataset = AMASSDataset(train_dir, sequence_length=SEQUENCE_LENGTH)
-    val_dataset = AMASSDataset(validation_dir, sequence_length=SEQUENCE_LENGTH)
+    train_dataset = AMASSDataset(train_dir)
+    val_dataset = AMASSDataset(validation_dir)
     
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
     # Initialize and train model
     model = PoseNetwork()
-    train_model(model, train_dataloader, val_dataloader, num_epochs=100)
+    train_model(model, train_dataloader, val_dataloader, num_epochs=10)
 
     # Load best model for testing
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
@@ -199,7 +190,7 @@ if __name__ == "__main__":
     model.to(device)
     model.eval()
     # Test the best model
-    test_dataset = AMASSDataset(test_dir, sequence_length=SEQUENCE_LENGTH)
+    test_dataset = AMASSDataset(test_dir)
     test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     test_loss = evaluate_model(model, test_dataloader, device)
     
