@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import os
+from tqdm import tqdm
 
 class PoseNetwork(nn.Module):
     def __init__(self, input_joints=24, joint_dims=3, hidden_size=1024, pose_params=72):
@@ -85,7 +86,8 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
         model.train()
         total_train_loss = 0
         
-        for batch_idx, (joints, poses) in enumerate(train_dataloader):
+        train_pbar = tqdm(train_dataloader, desc=f'Epoch [{epoch+1}/{num_epochs}] Training')
+        for batch_idx, (joints, poses) in enumerate(train_pbar):
             joints = joints.to(device)
             poses = poses.to(device)
             
@@ -101,6 +103,7 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
             optimizer.step()
             
             total_train_loss += loss.item()
+            train_pbar.set_postfix({'train_loss': f'{loss.item():.4f}'})
         
         avg_train_loss = total_train_loss / len(train_dataloader)
         
@@ -108,14 +111,16 @@ def train_model(model, train_dataloader, val_dataloader, num_epochs=100, learnin
         model.eval()
         total_val_loss = 0
         
+        val_pbar = tqdm(val_dataloader, desc='Validation')
         with torch.no_grad():
-            for joints, poses in val_dataloader:
+            for joints, poses in val_pbar:
                 joints = joints.to(device)
                 poses = poses.to(device)
                 
                 predicted_poses = model(joints)
                 val_loss = criterion(predicted_poses, poses)
                 total_val_loss += val_loss.item()
+                val_pbar.set_postfix({'val_loss': f'{val_loss.item():.4f}'})
         
         avg_val_loss = total_val_loss / len(val_dataloader)
         
@@ -150,14 +155,16 @@ def evaluate_model(model, test_dataloader, device):
     criterion = nn.MSELoss()
     total_loss = 0
     
+    test_pbar = tqdm(test_dataloader, desc='Testing')
     with torch.no_grad():
-        for joints, poses in test_dataloader:
+        for joints, poses in test_pbar:
             joints = joints.to(device)
             poses = poses.to(device)
             
             predicted_poses = model(joints)
             loss = criterion(predicted_poses, poses)
             total_loss += loss.item()
+            test_pbar.set_postfix({'test_loss': f'{loss.item():.4f}'})
     
     avg_loss = total_loss / len(test_dataloader)
     print(f'Test Loss: {avg_loss:.4f}')
